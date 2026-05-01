@@ -1,155 +1,290 @@
-### Caution: Ignoring bold red error messages can mess up your system. This is the result of a missing error check in xbps. Do not blame the script for this.
+# xdeb-ng
 
-# xdeb
-xdeb is a posix shell script for converting deb(ian) packages to the xbps format.
+`xdeb-ng` converts Debian `.deb` packages into Void Linux `.xbps` packages. The project name is `xdeb-ng`, but the binary is still named `xdeb`.
 
-## Usage
+> Caution: converted packages can overwrite files on your system if you ignore conflict warnings. Read errors before installing generated packages.
 
-### Converting packages
-Conversion will create files in your current working directory. Refer to [the installation instruction](#Installation) for more information.
+## Why xdeb-ng?
 
-1. Install dependencies: `xbps-install binutils tar curl xbps xz`
-2. Download xdeb: `curl -LO github.com/xdeb-org/xdeb/releases/latest/download/xdeb`
-3. Set executable bit: `chmod 0744 xdeb`
-4. Convert: `./xdeb -Sedf <name>_<version>_<arch>.deb`
-5. Install: `xbps-install -R ./binpkgs <name>`
+`xdeb-ng` keeps the original `xdeb` workflow while replacing the shell implementation with a Rust binary.
 
-### Installation
-Copy the script to `/usr/local/bin/`and set `XDEB_PKGROOT=${HOME}/.config/xdeb` to avoid cluttering your current working directory.
-Binaries will then be exported to `${XDEB_PKGROOT-.}/binpkgs`.
+- The binary is still `xdeb`, so familiar commands continue to work.
+- `xdeb convert`, `xdeb install`, `xdeb info`, `xdeb clean`, and `xdeb doctor` provide clearer entry points.
+- `xdeb install` covers the common wrapper flow: get a `.deb`, convert it, then install the generated `.xbps`.
+- `--dry-run`, `--explain-deps`, and `xdeb info` let you inspect a package before building or installing it.
+- Dependency resolution is host libc aware. On glibc systems, musl dependencies are skipped. On musl systems, glibc dependencies are skipped.
+- Safety checks catch unsafe archive paths, unsafe symlinks, invalid metadata, stale shlibs data, unresolved dependencies when requested, file conflicts, and Debian maintainer scripts.
+- It stays pragmatic by using existing Void tools: `xbps-create`, `xbps-rindex`, `xbps-install`, `objdump`, `tar`, `ar`, `curl`, and `xz`.
 
-### Flags
-In short: Just use `-Sedf` (Sync dependency list, remove empty directories, enable dependency resolution, resolve conflicts = don't break system)
+## Requirements
 
-Options can also be set via environment variables:
+Install the runtime and build dependencies:
+
+```sh
+xbps-install binutils tar curl xbps xz rust cargo
 ```
+
+Check your environment:
+
+```sh
+xdeb doctor
+```
+
+## Build
+
+```sh
+cargo build --release
+```
+
+The binary is created at:
+
+```sh
+./target/release/xdeb
+```
+
+To install it system-wide:
+
+```sh
+sudo install -Dm755 ./target/release/xdeb /usr/local/bin/xdeb
+```
+
+Optional: set a persistent package root so conversion artifacts do not clutter the current directory.
+
+```sh
+export XDEB_PKGROOT="$HOME/.config/xdeb"
+```
+
+Generated packages are written to `${XDEB_PKGROOT}/binpkgs`, or `./binpkgs` if `XDEB_PKGROOT` is unset.
+
+## Quick Start
+
+Convert a local `.deb` into an `.xbps` package:
+
+```sh
+xdeb convert -Sedf package.deb
+```
+
+Install the generated package manually:
+
+```sh
+xbps-install -R ./binpkgs <package-name>
+```
+
+Convert and install in one step:
+
+```sh
+xdeb install package.deb
+```
+
+Install from a URL:
+
+```sh
+xdeb install --file https://example.invalid/package.deb
+```
+
+Preview without building or installing:
+
+```sh
+xdeb convert -Sd --dry-run --explain-deps package.deb
+```
+
+Inspect metadata:
+
+```sh
+xdeb info package.deb
+xdeb info --deps --explain-deps package.deb
+xdeb info --json package.deb
+```
+
+## Commands
+
+### `xdeb convert`
+
+Convert a `.deb` to `.xbps`.
+
+```sh
+xdeb convert -Sedf package.deb
+```
+
+The classic flag-only form is also supported:
+
+```sh
+xdeb -Sedf package.deb
+```
+
+Useful options:
+
+- `-S`: sync the Void shlibs dependency list.
+- `-d`: resolve automatic shared library dependencies.
+- `-e`: remove empty directories from the package.
+- `-f`: accepted for compatibility. Conflict fixes are enabled by default.
+- `-F`: disable automatic conflict fixes.
+- `-R`: do not register the package in the local repository index.
+- `-q`: extract only, do not build.
+- `-b`: build from an existing `destdir` without extracting a `.deb`.
+- `--dry-run`: resolve and print a preview without building.
+- `--explain-deps`: print shared library to XBPS dependency mappings.
+- `--missing-deps=warn|error`: choose whether unresolved SONAMEs fail conversion.
+- `--file-conflicts=warn|error|ignore|auto`: choose conflict handling behavior.
+
+### `xdeb install`
+
+Convert and install a `.deb` in one command.
+
+```sh
+xdeb install package.deb
+```
+
+Useful options:
+
+- `--file`, `-f`: local `.deb` path or remote URL.
+- `--options`, `-o`: conversion flags, default is `-Sde`.
+- `--deps`: add manual dependencies.
+- `--not-deps`: exclude dependencies from automatic resolution.
+- `--dry-run`: convert and preview without installing.
+- `--explain-deps`: show dependency mappings.
+- `--json`: print machine-readable preview output.
+- `--keep-workdir`: keep temporary files after install for debugging.
+- `--yes`, `-y`: skip install confirmation.
+- `--missing-deps=warn|error`: choose whether unresolved SONAMEs fail installation.
+
+### `xdeb info`
+
+Inspect a `.deb` without building a package.
+
+```sh
+xdeb info package.deb
+xdeb info --deps --explain-deps package.deb
+xdeb info --json package.deb
+```
+
+### `xdeb clean`
+
+Remove generated work directories.
+
+```sh
+xdeb clean
+xdeb clean --repo
+xdeb clean --all
+```
+
+### `xdeb doctor`
+
+Check required tools, host libc, and shlibs cache state.
+
+```sh
+xdeb doctor
+```
+
+## Dependency Resolution
+
+Automatic dependency resolution uses Void's `common/shlibs` file and `objdump`.
+
+```sh
+xdeb convert -Sd package.deb
+```
+
+Use `--explain-deps` to see exactly why dependencies were added:
+
+```sh
+xdeb convert -Sd --dry-run --explain-deps package.deb
+```
+
+Manual dependencies can be added with `--deps`:
+
+```sh
+xdeb convert -Sd --deps='oracle-jre>=8' package.deb
+```
+
+Dependencies can be excluded with `--not-deps`:
+
+```sh
+xdeb convert -Sd --not-deps='some-package' package.deb
+```
+
+Unresolved libraries normally produce warnings. To fail instead:
+
+```sh
+xdeb convert -Sd --missing-deps=error package.deb
+```
+
+## File Conflicts
+
+XBPS can damage a system if a generated package contains files that conflict with existing system files. `xdeb-ng` checks for conflicts on the machine where conversion runs.
+
+Conflict modes:
+
+- `--file-conflicts=error`: fail when conflicts are found. This is the default.
+- `--file-conflicts=warn`: warn but allow the package to be built.
+- `--file-conflicts=ignore`: skip conflict checks.
+- `--file-conflicts=auto`: apply automatic conflict fixes and fail if conflicts remain.
+
+Automatic conflict fixes move common Debian paths into Void-compatible locations, such as `/bin` to `/usr/bin` and `/lib` to `/usr/lib`.
+
+## Safety Checks
+
+`xdeb-ng` rejects or warns about several risky package features:
+
+- Unsafe archive paths such as absolute paths or `../`.
+- Unsafe symlinks that point outside the package root.
+- Invalid package names and invalid versions.
+- Debian maintainer scripts such as `postinst` and `postrm`, since XBPS will not run them automatically.
+- Stale `shlibs` cache metadata.
+- Unresolved shared library dependencies when `--missing-deps=error` is used.
+
+## Environment Variables
+
+Common variables:
+
+```sh
+export XDEB_PKGROOT="$HOME/.config/xdeb"
 export XDEB_OPT_DEPS=true
-export XDEB_OPT_SYNC=true
 export XDEB_OPT_INSTALL=true
 export XDEB_OPT_FIX_CONFLICT=true
 export XDEB_OPT_WARN_CONFLICT=true
+export XDEB_COLOR=never
 ```
 
-More information:
+`NO_COLOR` is also respected.
+
+## Examples
+
+Hydra Launcher dry run:
+
 ```sh
-usage: xdeb [-S] [-d] [-Sd] [--deps] ... FILE
-  -d                          Automatic dependency resolution
-  -S                          Download shlibs file for automatic dependencies
-  -c                          Like -C, excluding shlibs and binpkgs
-  -r                          Remove repodata file (Use for re-building)
-  -R                          Do not register package in repository pool.
-  -q                          Extract .deb into destdir only, do not build
-  -C                          Remove all files created by this script
-  -b                          Build from destdir directly without a .deb file
-  -e                          Remove empty directories from the package
-  -m                          Add the -32bit suffix to the package name
-  -i                          Don't warn if package could break the system
-  -f                          Try to fix certain file conflicts (deprecated)
-  -F                          Don't try to fix certain file conflicts
-  -I                          Automatically install the package
-  --deps=...                  Packages that shall be added as dependencies
-  --not-deps=...              Packages that shall not be used as dependencies
-  --arch=...                  Package arch
-  --name=...                  Package name
-  --version=...               Package version
-  --revision=... --rev=...    Package revision
-  --post-extract=...          File with post-extract commands (i.e. /dev/stdin)
-  --help | -h                 Show help page
-
-example:
-  xdeb -Cq                    Remove all files and quit
-  xdeb -Sd FILE               Sync depdendency list and create package
-  xdeb --deps='tar>0' FILE    Add tar as manual dependency and create package
+xdeb convert -SdR --dry-run --explain-deps hydralauncher_3.9.7_amd64.deb
 ```
 
-#### Automatic Dependencies
-Using the automatic dependency feature allows reliable conversion of nearly all deb packages.
+Build without registering in the local repository:
 
-Use `-Sd` to sync [the dependency list](https://raw.githubusercontent.com/void-linux/void-packages/master/common/shlibs) and build with dependency resolution enabled.
-Subsequent runs do not require `-S` and xdeb will not require internet. Just make sure to sync it once in a while.
-
-#### Multilib
-The `-m` (multilib) flag adds the suffix `-32bit` to the package and dependencies.
-Example with host arch `x86_64`:
 ```sh
-./xdeb -Sedfm --arch=x86_64 ~/Downloads/Simplenote-linux-1.16.0-beta1-i386.deb
+xdeb convert -SeR package.deb
 ```
-**`/lib` will not be rewritten to `/lib32`**
 
-#### File Conflicts
-Due to a missing check, the xbps package manager might break the system if a package contains a file that is already present on the system.
-As a workaround, xdeb shows warnings for conflicting files, **do not ignore them**.
-**This only works when installing packages on the same machine they were converted on!**
+Build from a previously extracted `destdir`:
 
-Updating a package may show lots of unnecessary warnings. Disable using `-i` (s**i**lence).
-
-##### Resolving conflicts
-Conflicts can either be resolved automatically (`-f`) or manually.
-
-1. Build package: `xdeb ...`
-2. Observe warnings
-3. Fix files (Example: remove): `rm -rf ${XDEB_PKGROOT-.}/destdir/usr/lib`
-4. Build package without conflicts: `./xdeb -rb`
-
-#### Using manual dependencies
-Converting `Minecraft.deb` with manual dependency `oracle-jre` (Version 8 or later):
 ```sh
-$ ./xdeb -Sedr --deps='oracle-jre>=8' ~/Downloads/Minecraft.deb
-[+] Synced shlibs
-[+] Extracted files
-[+] Resolved dependencies (oracle-jre>=8 alsa-lib>=1.0.20_1 atk>=1.26.0_1
-cairo>=1.8.6_1 dbus-libs>=1.2.10_1 expat>=2.0.0_1 fontconfig>=2.6.0_1
-gdk-pixbuf>=2.22.0_1 glib>=2.18.0_1 glibc>=2.29_1 gtk+>=2.16.0_1 gtk+3>=3.0.0_1
-libcups>=1.5.3_1 libgcc>=4.4.0_1 libstdc++>=4.4.0_1 libuuid>=2.18_1
-libX11>=1.2_1 libxcb>=1.2_1 libXcomposite>=0.4.0_1 libXcursor>=1.1.9_1
-libXdamage>=1.1.1_1 libXext>=1.0.5_1 libXfixes>=4.0.3_1 libXi>=1.2.1_1
-libXrandr>=1.3.0_1 libXrender>=0.9.4_1 libXScrnSaver>=1.1.3_1 libXtst>=1.0.3_1
-nspr>=4.8_1 nss>=3.12.4_1 pango>=1.24.0_1 zlib>=1.2.3_1)
-index: added `minecraft-launcher-2.1.17627_1' (x86_64).
-index: 1 packages registered.
-[+] Done. Install using `xbps-install -R binpkgs minecraft-launcher-2.1.17627_1`
-
-$ sudo xbps-install -R ./binpkgs minecraft-launcher-2.1.17417_1
-
-Name               Action    Version           New version            Download size
-GConf              install   -                 3.2.6_9                - 
-minecraft-launcher install   -                 2.1.17417_1            - 
-
-Size required on disk:         198MB
-Space available on disk:       276GB
-
-Do you want to continue? [Y/n] n
+xdeb convert -rb
 ```
-Add `>0` to match any version (i.e. `--deps='tar>0 base-system>0 curl>0'`)
 
+Use a custom package name and version:
 
-#### Ignoring dependencies
-
-When converting packages for electron based appliciations, `xdeb` may
-mistakenly add `musl` as a dependency. This can be resolved by using the
-`--not-deps` flag to blacklist certain dependencies:
-
+```sh
+xdeb convert --name=my-package --version=1.2.3 package.deb
 ```
-$ ./xdeb -Sedf --not-deps="musl" ~/Downloads/gitkraken-amd64.deb
-I Synced shlibs
-I Extracted files
-W Unable to find dependency for libcrypto.so.1.0.0
-W Unable to find dependency for libcrypto.so.1.1
-W Unable to find dependency for libcrypto.so.10
-W Unable to find dependency for libssl.so.1.0.0
-W Unable to find dependency for libssl.so.1.1
-W Unable to find dependency for libssl.so.10
-I Resolved dependencies (alsa-lib>=1.0.20_1 at-spi2-atk>=2.6.0_1 at-spi2-core>=1.91.91_1 atk>=1.26.0_1 cairo>=1.8.6_1 dbus-libs>=1.2.10_1 e2fsprogs-libs>=1.41.5_1 expat>=2.0.0_1 glib>=2.80.0_1 glibc>=2.39_1 gtk+3>=3.0.0_1 libX11>=1.2_1 libXcomposite>=0.4.0_1 libXdamage>=1.1.1_1 libXext>=1.0.5_1 libXfixes>=4.0.3_1 libXrandr>=1.3.0_1 libcups>=1.5.3_1 libcurl>=7.75.0_2 libdrm>=2.4.6_1 libgbm>=9.0_1 libgcc>=4.4.0_1 libstdc++>=4.4.0_1 libxcb>=1.2_1 libxkbcommon>=0.2.0_1 libxkbfile>=1.0.5_1 mit-krb5-libs>=1.8_1 nspr>=4.8_1 nss>=3.12.4_1 pango>=1.24.0_1 zlib>=1.2.3_1)
-index: skipping `gitkraken-9.13.0_1' (x86_64), already registered.
-index: 1 packages registered.
-I Install using `xbps-install -R ./binpkgs gitkraken-9.13.0_1`
+
+## Development
+
+Run checks locally:
+
+```sh
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
 ```
+
+The integration tests generate small `.deb` fixtures and exercise metadata preview, dry runs, invalid metadata, and unsafe symlink rejection.
 
 ## Rationale
 
-- The VoidLinux-Team refuses to ship more chromium based browsers.
-- Electron based applications, like [Simplenote](https://simplenote.com/)
-- Proprietary applications like [Discord](https://discord.gg) or [Minecraft](https://minecraft.net).
-
-Manually building packages is bothersome and would require learning the build system, cloning the (~150MB) [void-packages](https://github.com/void-linux/void-packages) repository, etc.<br>
-This script handles everything automatically and without even accessing the internet by default.
+Void Linux does not package every proprietary, Electron, or Debian-only application. Manually converting these packages can require cloning `void-packages` and writing templates. `xdeb-ng` automates the practical conversion path while keeping the result inspectable before installation.

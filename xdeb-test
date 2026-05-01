@@ -19,7 +19,8 @@ unset $(env | grep XDEB_ | sed 's/^\([^=]*\)=.*$/\1/g')
 xdeb_dir="$(dirname -- "$(realpath -- "${0}")")"
 test_dir="${xdeb_dir}/test"
 
-xdeb_path="${xdeb_dir}/xdeb"
+xdeb_path="${xdeb_dir}/target/debug/xdeb"
+[ -x "${xdeb_path}" ] || cargo build --manifest-path "${xdeb_dir}/Cargo.toml" || exit 1
 
 export XDEB_PKGROOT="${test_dir}/.pkgroot"
 export XDEB_TEMPDIR="${test_dir}/.tmp"
@@ -35,7 +36,7 @@ export XDEB_TEMPDIR="${test_dir}/.tmp"
     mkdir -p "${XDEB_TEMPDIR}/${d}"
     cd "${XDEB_TEMPDIR}/${d}"
 
-    xdeb -CcQ
+    "${xdeb_path}" -CcQ
 
     begin_test "${d}"
         . "${test_dir}/${d}.test"
