@@ -109,8 +109,6 @@ fn run_config(cfg: &mut Config) -> Result<(), String> {
         ("curl", "curl"),
         ("ar", "binutils"),
         ("objdump", "binutils"),
-        ("xbps-rindex", "xbps"),
-        ("xbps-create", "xbps"),
     ] {
         check_command(cmd, pkg)?;
     }
@@ -1269,6 +1267,14 @@ fn check_tree(cfg: &mut Config, pkgname: &str) -> Result<(), String> {
 }
 
 fn build_package(cfg: &Config, meta: &mut PackageMeta) -> Result<(), String> {
+    check_command("xbps-create", "xbps")?;
+    if cfg.opt_register {
+        check_command("xbps-rindex", "xbps")?;
+    }
+    if cfg.opt_install {
+        check_command("xbps-install", "xbps")?;
+    }
+
     let out = format!("{}-{}_{}", meta.name, meta.version, meta.revision);
     run_status(
         Command::new("xbps-create")
