@@ -1,34 +1,28 @@
 # xdeb-ng
 
-`xdeb-ng` converts Debian `.deb` packages into Void Linux `.xbps` packages.
+Convert Debian `.deb` packages into Void Linux `.xbps` packages.
 
-The project is called `xdeb-ng`, but the binary is still `xdeb`. Old muscle memory still works.
+The project is called `xdeb-ng`, but the binary is still `xdeb` — old muscle memory still works.
 
-> Caution: converted packages can overwrite files on your system if you ignore conflict warnings. Read the output before installing anything.
+> **Caution:** Converted packages can overwrite files on your system if you ignore conflict warnings. Read the output before installing anything.
 
-## What This Is
+## Overview
 
-`xdeb-ng` keeps the original `xdeb` workflow, but replaces the shell script with a Rust binary.
+`xdeb-ng` keeps the original `xdeb` workflow, but replaces the shell script with a Rust binary. Same idea, less mess.
 
-Same idea. Less mess.
-
-* binary name stays `xdeb`
-* clear subcommands: `convert`, `install`, `info`, `clean`, `doctor`
-* `xdeb install` handles the common flow end-to-end
-* dry runs and inspection are first-class
-* dependency resolution respects your libc (glibc vs musl)
-* safety checks are stricter and less trusting
-* still uses Void tools instead of reinventing everything
+- Binary name stays `xdeb`
+- Clear subcommands: `convert`, `install`, `info`, `clean`, `doctor`
+- `xdeb install` handles the common flow end-to-end
+- Dry runs and inspection are first-class
+- Dependency resolution respects your libc (glibc vs musl)
+- Safety checks are stricter and less trusting
+- Still uses Void tools instead of reinventing everything
 
 It is not trying to be a packaging system. It is a practical conversion tool.
 
 ## Why This Exists
 
-Void does not package everything.
-
-Sometimes you just want to take a `.deb`, convert it, inspect it, and install it without writing a full template or cloning `void-packages`.
-
-This does that. Nothing more.
+Void does not package everything. Sometimes you just want to take a `.deb`, convert it, inspect it, and install it — without writing a full template or cloning `void-packages`. This does that. Nothing more.
 
 ## Requirements
 
@@ -48,19 +42,13 @@ xdeb doctor
 cargo build --release
 ```
 
-Binary:
-
-```text
-./target/release/xdeb
-```
-
-Install:
+The binary will be at `./target/release/xdeb`. To install it:
 
 ```sh
 sudo install -Dm755 ./target/release/xdeb /usr/local/bin/xdeb
 ```
 
-Optional package root:
+Optionally, set a custom package root:
 
 ```sh
 export XDEB_PKGROOT="$HOME/.config/xdeb"
@@ -68,71 +56,71 @@ export XDEB_PKGROOT="$HOME/.config/xdeb"
 
 ## Quick Start
 
-Convert:
-
+**Convert:**
 ```sh
 xdeb convert -Sedf package.deb
 ```
 
-Install:
-
+**Install after converting:**
 ```sh
 xbps-install -R ./binpkgs <package-name>
 ```
 
-One-shot:
-
+**One-shot convert and install:**
 ```sh
 xdeb install package.deb
 ```
 
-From URL:
-
+**From a URL:**
 ```sh
 xdeb install --file https://example.invalid/package.deb
 ```
 
-Preview only:
+**Bypass strict symlink checks (e.g. for Zoom):**
+```sh
+xdeb convert -Sd -i package.deb
+```
 
+**Preview only:**
 ```sh
 xdeb convert -Sd --dry-run --explain-deps package.deb
 ```
 
-Inspect:
-
+**Inspect a package:**
 ```sh
 xdeb info package.deb
 ```
 
 ## Commands
 
-### convert
+### `convert`
 
-Convert `.deb` → `.xbps`.
+Convert a `.deb` into an `.xbps` package.
 
 ```sh
 xdeb convert -Sedf package.deb
 ```
 
-Classic form still works:
+The classic form still works:
 
 ```sh
 xdeb -Sedf package.deb
 ```
 
-Key options:
+| Flag | Description |
+|------|-------------|
+| `-S` | Sync shlibs |
+| `-d` | Resolve shared libraries |
+| `-e` | Remove empty directories |
+| `-i` | Bypass strict path verification / suppress safety warnings |
+| `-F` | Disable conflict fixes |
+| `-R` | Skip repo registration |
+| `--dry-run` | Preview only, do not build |
+| `--explain-deps` | Show SONAME → XBPS dependency mapping |
+| `--missing-deps=warn\|error` | Control behaviour on unresolved deps |
+| `--file-conflicts=warn\|error\|ignore\|auto` | Control conflict handling |
 
-* `-S` sync shlibs
-* `-d` resolve shared libs
-* `-e` remove empty dirs
-* `-F` disable conflict fixes
-* `-R` skip repo registration
-* `--dry-run` preview only
-* `--explain-deps` show mapping
-* `--missing-deps=warn|error`
-* `--file-conflicts=warn|error|ignore|auto`
-
-### install
+### `install`
 
 Convert and install in one step:
 
@@ -140,21 +128,21 @@ Convert and install in one step:
 xdeb install package.deb
 ```
 
-### info
+### `info`
 
-Inspect without building:
+Inspect a package without building it:
 
 ```sh
 xdeb info package.deb
 ```
 
-### clean
+### `clean`
 
 ```sh
 xdeb clean
 ```
 
-### doctor
+### `doctor`
 
 ```sh
 xdeb doctor
@@ -162,65 +150,73 @@ xdeb doctor
 
 ## Dependency Resolution
 
-Uses Void’s `common/shlibs` + `objdump`.
+Uses Void's `common/shlibs` combined with `objdump`.
 
 ```sh
+# Resolve deps
 xdeb convert -Sd package.deb
-```
 
-Explain:
-
-```sh
+# Show mapping
 xdeb convert -Sd --dry-run --explain-deps package.deb
-```
 
-Fail on missing:
-
-```sh
+# Fail on unresolved deps
 xdeb convert -Sd --missing-deps=error package.deb
 ```
 
 ## File Conflicts
 
-By default, conflicts fail the build.
+By default, conflicts fail the build. This can be changed with `--file-conflicts`:
 
-You can change behavior:
-
-* `error` (default)
-* `warn`
-* `ignore`
-* `auto` (attempt fixes, then fail if needed)
+| Mode | Behaviour |
+|------|-----------|
+| `error` | Fail on conflicts (default) |
+| `warn` | Warn but continue |
+| `ignore` | Silently ignore conflicts |
+| `auto` | Attempt fixes, fail if still needed |
 
 Automatic fixes handle common Debian → Void path differences.
 
-## Safety
+## Safety & Quirks
 
 `xdeb-ng` rejects or warns about:
 
-* unsafe archive paths (`../`, absolute paths)
-* unsafe symlinks
-* invalid metadata
-* maintainer scripts
-* stale shlibs data
-* unresolved dependencies (if configured)
+- Unsafe archive paths (`../`, absolute paths)
+- Unsafe symlinks
+- Invalid metadata
+- Maintainer scripts
+- Stale shlibs data
+- Unresolved dependencies (if configured)
 
-If something looks sketchy, it probably is.
+### The Absolute Symlink Quirk
 
-## Environment
+Some commercial packages (like Zoom) bundle absolute symlinks inside their data archive that point to directories outside the working extraction directory (e.g. `/usr/bin/zoom` → `/opt/zoom/ZoomLauncher`).
+
+Because `xdeb-ng` validates archive structure during extraction, it will flag these as **unsafe symlinks escaping the package root** — even if `--file-conflicts=ignore` is set. To bypass this, pass `-i`:
 
 ```sh
-export XDEB_PKGROOT="$HOME/.config/xdeb"
-export XDEB_COLOR=never
+xdeb convert -Sd -i zoom_amd64.deb
 ```
 
-`NO_COLOR` is respected.
+If the symlink is broken after installation, recreate it manually:
+
+```sh
+sudo ln -s /opt/zoom/ZoomLauncher /usr/bin/zoom
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `XDEB_PKGROOT` | Override the package root directory |
+| `XDEB_COLOR` | Set to `never` to disable colour output |
+| `NO_COLOR` | Respected if set |
 
 ## Philosophy
 
-* do one job
-* make it inspectable
-* fail loudly when things look wrong
-* do not pretend converted packages are safe
+- Do one job
+- Make it inspectable
+- Fail loudly when things look wrong
+- Do not pretend converted packages are safe
 
 This is a convenience tool, not a guarantee.
 
@@ -231,7 +227,3 @@ cargo fmt --check
 cargo clippy -- -D warnings
 cargo test
 ```
-
-## Upstream
-
-Original `xdeb` idea, rewritten.
